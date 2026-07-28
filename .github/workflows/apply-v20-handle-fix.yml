@@ -1,0 +1,43 @@
+name: Apply v20 vertical handle fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch editor CSS
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          marker = '/* v20 vertical handle visibility */'
+          if marker not in text:
+              patch = '.card-shell.vertical .move-handle{left:15px}.card-shell.vertical .field{padding-left:36px;padding-right:10px}' + marker
+              text = text.replace('@page{size:A4 landscape;margin:5mm}', patch + '@page{size:A4 landscape;margin:5mm}', 1)
+              text = text.replace('редактор ценников v19', 'редактор ценников v20', 1)
+              text = text.replace('Версия v19:', 'Версия v20:', 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Fix vertical editor handles in v20 [skip ci]'
+          git push
