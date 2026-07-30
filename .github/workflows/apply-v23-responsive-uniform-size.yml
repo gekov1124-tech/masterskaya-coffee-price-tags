@@ -52,7 +52,7 @@ jobs:
       - name: Commit v23
         shell: bash
         run: |
-          if git diff --quiet -- editor-v23.html; then
+          if [ -z "$(git status --porcelain -- editor-v23.html)" ]; then
             echo 'No v23 changes required'
             exit 0
           fi
