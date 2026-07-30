@@ -1,0 +1,47 @@
+name: Debug v22 uniform name size
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract uniform sizing code
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('editor-v22.html').read_text(encoding='utf-8')
+          terms = ['uniformNamePx', 'uniform-editor-name-size', 'uniform-print-name-size', 'nameScale', 'scheduleUniform', 'fitUniform', 'calculateUniform', 'recalculateUniform']
+          chunks = []
+          seen = set()
+          for term in terms:
+              start = 0
+              while True:
+                  idx = text.find(term, start)
+                  if idx < 0:
+                      break
+                  a = max(0, idx - 900)
+                  b = min(len(text), idx + 1800)
+                  key = (a, b)
+                  if key not in seen:
+                      seen.add(key)
+                      chunks.append(f'\n\n===== {term} @ {idx} =====\n' + text[a:b])
+                  start = idx + len(term)
+          Path('debug-v22-uniform.txt').write_text(''.join(chunks), encoding='utf-8')
+          PY
+      - name: Commit diagnostic
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add debug-v22-uniform.txt
+          git commit -m 'Add temporary v22 uniform sizing diagnostic [skip ci]'
+          git push
