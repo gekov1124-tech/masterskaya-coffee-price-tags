@@ -1,0 +1,88 @@
+name: Apply v21 movable price update
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add movable price block
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          marker = '/* v21 movable price */'
+
+          if marker not in text:
+              replacements = [
+                  (
+                      'const DEFAULT_OFFSET=Object.freeze({category:{x:0,y:0},name:{x:0,y:0},subtitle:{x:0,y:0}}),OLD_DEFAULT=',
+                      'const DEFAULT_OFFSET=Object.freeze({category:{x:0,y:0},name:{x:0,y:0},subtitle:{x:0,y:0},price:{x:0,y:0}}),OLD_DEFAULT='
+                  ),
+                  (
+                      'function cloneOffset(raw){return{category:{x:Number(raw?.category?.x)||0,y:Number(raw?.category?.y)||0},name:{x:Number(raw?.name?.x)||0,y:Number(raw?.name?.y)||0},subtitle:{x:Number(raw?.subtitle?.x)||0,y:Number(raw?.subtitle?.y)||0}}}',
+                      'function cloneOffset(raw){return{category:{x:Number(raw?.category?.x)||0,y:Number(raw?.category?.y)||0},name:{x:Number(raw?.name?.x)||0,y:Number(raw?.name?.y)||0},subtitle:{x:Number(raw?.subtitle?.x)||0,y:Number(raw?.subtitle?.y)||0},price:{x:Number(raw?.price?.x)||0,y:Number(raw?.price?.y)||0}}}'
+                  ),
+                  (
+                      '.price-row{position:absolute;z-index:4;right:9px;bottom:2px;display:flex;align-items:baseline;gap:4px;font-family:var(--price-font);font-size:calc(3.2rem * var(--price-scale));line-height:1}',
+                      '.price-row{position:absolute;z-index:4;right:9px;bottom:2px;display:flex;align-items:baseline;gap:4px;padding-left:31px;font-family:var(--price-font);font-size:calc(3.2rem * var(--price-scale));line-height:1;transform:translate(var(--price-dx,0px),var(--price-dy,0px))}'
+                  ),
+                  (
+                      '.print-price{position:absolute;z-index:3;right:2.4mm;bottom:1.2mm;font-family:var(--price-font);font-size:calc(7.6mm * var(--price-scale));line-height:1;white-space:nowrap}',
+                      '.print-price{position:absolute;z-index:3;right:2.4mm;bottom:1.2mm;font-family:var(--price-font);font-size:calc(7.6mm * var(--price-scale));line-height:1;white-space:nowrap;transform:translate(var(--price-dx,0mm),var(--price-dy,0mm))}'
+                  ),
+                  (
+                      'const price=document.createElement("div");price.className="price-row";const inp=document.createElement("input");',
+                      'const price=document.createElement("div");price.className="price-row";price.dataset.block="price";price.style.setProperty("--price-dx",`${off.price.x}px`);price.style.setProperty("--price-dy",`${off.price.y}px`);const priceHandle=document.createElement("button");priceHandle.type="button";priceHandle.className="move-handle price-move-handle";priceHandle.dataset.block="price";priceHandle.textContent="↕";const inp=document.createElement("input");'
+                  ),
+                  (
+                      'rub.textContent="₽";price.append(inp,rub);rot.append(zone,div,price);',
+                      'rub.textContent="₽";price.append(priceHandle,inp,rub);rot.append(zone,div,price);'
+                  ),
+                  (
+                      'const price=document.createElement("div");price.className="print-price";price.textContent=`${item.price} ₽`;rot.append(zone,div,price);',
+                      'const price=document.createElement("div");price.className="print-price";price.textContent=`${item.price} ₽`;price.style.setProperty("--price-dx",`${off.price.x*.15}mm`);price.style.setProperty("--price-dy",`${off.price.y*.15}mm`);rot.append(zone,div,price);'
+                  ),
+                  (
+                      'const w=s.rot.querySelector(`[data-block="${s.block}"]`);w.style.setProperty("--dx",`${p.x}px`);w.style.setProperty("--dy",`${p.y}px`)',
+                      'const w=s.rot.querySelector(`[data-block="${s.block}"]`);if(s.block==="price"){w.style.setProperty("--price-dx",`${p.x}px`);w.style.setProperty("--price-dy",`${p.y}px`)}else{w.style.setProperty("--dx",`${p.x}px`);w.style.setProperty("--dy",`${p.y}px`)}'
+                  ),
+              ]
+
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f'Required source fragment not found: {old[:100]}')
+                  text = text.replace(old, new, 1)
+
+              css_patch = '.price-row .move-handle{left:12px;top:50%}.card-shell.vertical .price-row .move-handle{left:12px}.price-input{min-width:72px}' + marker
+              text = text.replace('@page{size:A4 landscape;margin:5mm}', css_patch + '@page{size:A4 landscape;margin:5mm}', 1)
+              text = text.replace('редактор ценников v20', 'редактор ценников v21', 1)
+              text = text.replace('Версия v20:', 'Версия v21:', 1)
+              text = text.replace(
+                  '<strong>Автоматическая компоновка:</strong> категория, название и описание расположены последовательно.',
+                  '<strong>Автоматическая компоновка:</strong> категория, название и описание расположены последовательно. Цена редактируется нажатием, перемещается своей ручкой ↕, а размер меняется ползунком «Размер цены».'
+              )
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit update
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Make price editable and movable in v21 [skip ci]'
+          git push
