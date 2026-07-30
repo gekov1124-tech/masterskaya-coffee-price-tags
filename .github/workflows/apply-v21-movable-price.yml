@@ -21,56 +21,96 @@ jobs:
 
           path = Path('index.html')
           text = path.read_text(encoding='utf-8')
-          marker = '/* v21 movable price */'
+          marker = '/* v21 movable price runtime */'
 
           if marker not in text:
-              replacements = [
-                  (
-                      'const DEFAULT_OFFSET=Object.freeze({category:{x:0,y:0},name:{x:0,y:0},subtitle:{x:0,y:0}}),OLD_DEFAULT=',
-                      'const DEFAULT_OFFSET=Object.freeze({category:{x:0,y:0},name:{x:0,y:0},subtitle:{x:0,y:0},price:{x:0,y:0}}),OLD_DEFAULT='
-                  ),
-                  (
-                      'function cloneOffset(raw){return{category:{x:Number(raw?.category?.x)||0,y:Number(raw?.category?.y)||0},name:{x:Number(raw?.name?.x)||0,y:Number(raw?.name?.y)||0},subtitle:{x:Number(raw?.subtitle?.x)||0,y:Number(raw?.subtitle?.y)||0}}}',
-                      'function cloneOffset(raw){return{category:{x:Number(raw?.category?.x)||0,y:Number(raw?.category?.y)||0},name:{x:Number(raw?.name?.x)||0,y:Number(raw?.name?.y)||0},subtitle:{x:Number(raw?.subtitle?.x)||0,y:Number(raw?.subtitle?.y)||0},price:{x:Number(raw?.price?.x)||0,y:Number(raw?.price?.y)||0}}}'
-                  ),
-                  (
-                      '.price-row{position:absolute;z-index:4;right:9px;bottom:2px;display:flex;align-items:baseline;gap:4px;font-family:var(--price-font);font-size:calc(3.2rem * var(--price-scale));line-height:1}',
-                      '.price-row{position:absolute;z-index:4;right:9px;bottom:2px;display:flex;align-items:baseline;gap:4px;padding-left:31px;font-family:var(--price-font);font-size:calc(3.2rem * var(--price-scale));line-height:1;transform:translate(var(--price-dx,0px),var(--price-dy,0px))}'
-                  ),
-                  (
-                      '.print-price{position:absolute;z-index:3;right:2.4mm;bottom:1.2mm;font-family:var(--price-font);font-size:calc(7.6mm * var(--price-scale));line-height:1;white-space:nowrap}',
-                      '.print-price{position:absolute;z-index:3;right:2.4mm;bottom:1.2mm;font-family:var(--price-font);font-size:calc(7.6mm * var(--price-scale));line-height:1;white-space:nowrap;transform:translate(var(--price-dx,0mm),var(--price-dy,0mm))}'
-                  ),
-                  (
-                      'const price=document.createElement("div");price.className="price-row";const inp=document.createElement("input");',
-                      'const price=document.createElement("div");price.className="price-row";price.dataset.block="price";price.style.setProperty("--price-dx",`${off.price.x}px`);price.style.setProperty("--price-dy",`${off.price.y}px`);const priceHandle=document.createElement("button");priceHandle.type="button";priceHandle.className="move-handle price-move-handle";priceHandle.dataset.block="price";priceHandle.textContent="↕";const inp=document.createElement("input");'
-                  ),
-                  (
-                      'rub.textContent="₽";price.append(inp,rub);rot.append(zone,div,price);',
-                      'rub.textContent="₽";price.append(priceHandle,inp,rub);rot.append(zone,div,price);'
-                  ),
-                  (
-                      'const price=document.createElement("div");price.className="print-price";price.textContent=`${item.price} ₽`;rot.append(zone,div,price);',
-                      'const price=document.createElement("div");price.className="print-price";price.textContent=`${item.price} ₽`;price.style.setProperty("--price-dx",`${off.price.x*.15}mm`);price.style.setProperty("--price-dy",`${off.price.y*.15}mm`);rot.append(zone,div,price);'
-                  ),
-                  (
-                      'const w=s.rot.querySelector(`[data-block="${s.block}"]`);w.style.setProperty("--dx",`${p.x}px`);w.style.setProperty("--dy",`${p.y}px`)',
-                      'const w=s.rot.querySelector(`[data-block="${s.block}"]`);if(s.block==="price"){w.style.setProperty("--price-dx",`${p.x}px`);w.style.setProperty("--price-dy",`${p.y}px`)}else{w.style.setProperty("--dx",`${p.x}px`);w.style.setProperty("--dy",`${p.y}px`)}'
-                  ),
-              ]
-
-              for old, new in replacements:
-                  if old not in text:
-                      raise SystemExit(f'Required source fragment not found: {old[:100]}')
-                  text = text.replace(old, new, 1)
-
-              css_patch = '.price-row .move-handle{left:12px;top:50%}.card-shell.vertical .price-row .move-handle{left:12px}.price-input{min-width:72px}' + marker
+              css_patch = (
+                  '.price-row{padding-left:31px;transform:translate(var(--dx,0px),var(--dy,0px))}'
+                  '.price-row .move-handle{left:12px;top:50%}'
+                  '.card-shell.vertical .price-row .move-handle{left:12px}'
+                  '.price-input{min-width:72px}'
+                  '.print-price{transform:translate(var(--price-dx,0mm),var(--price-dy,0mm))}'
+                  + marker
+              )
               text = text.replace('@page{size:A4 landscape;margin:5mm}', css_patch + '@page{size:A4 landscape;margin:5mm}', 1)
+
+              runtime_patch = r'''
+<script id="v21MovablePricePatch">
+(() => {
+  const originalCloneOffset = cloneOffset;
+  cloneOffset = function(raw) {
+    const result = originalCloneOffset(raw);
+    result.price = {
+      x: Number(raw?.price?.x) || 0,
+      y: Number(raw?.price?.y) || 0
+    };
+    return result;
+  };
+
+  function ensurePriceOffsets(item) {
+    for (const key of ["offsetH", "offsetV"]) {
+      if (!item[key]) item[key] = cloneOffset();
+      if (!item[key].price) item[key].price = {x: 0, y: 0};
+    }
+    return offset(item).price;
+  }
+
+  function enhancePriceHandles() {
+    document.querySelectorAll(".card-shell").forEach(shell => {
+      const item = items.find(candidate => candidate.id === shell.dataset.id);
+      const row = shell.querySelector(".price-row");
+      if (!item || !row) return;
+
+      const position = ensurePriceOffsets(item);
+      row.dataset.block = "price";
+      row.style.setProperty("--dx", `${position.x}px`);
+      row.style.setProperty("--dy", `${position.y}px`);
+
+      if (!row.querySelector(".price-move-handle")) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "move-handle price-move-handle";
+        handle.dataset.block = "price";
+        handle.textContent = "↕";
+        handle.title = "Переместить цену";
+        handle.setAttribute("aria-label", "Переместить цену");
+        row.prepend(handle);
+      }
+    });
+  }
+
+  const originalRender = render;
+  render = function(...args) {
+    const result = originalRender(...args);
+    requestAnimationFrame(enhancePriceHandles);
+    return result;
+  };
+
+  const originalBuildPrintCard = buildPrintCard;
+  buildPrintCard = function(item) {
+    const position = ensurePriceOffsets(item);
+    const card = originalBuildPrintCard(item);
+    const price = card.querySelector(".print-price");
+    if (price) {
+      price.style.setProperty("--price-dx", `${position.x * .15}mm`);
+      price.style.setProperty("--price-dy", `${position.y * .15}mm`);
+    }
+    return card;
+  };
+
+  items.forEach(ensurePriceOffsets);
+  enhancePriceHandles();
+  save();
+})();
+</script>
+'''
+              text = text.replace('</body>', runtime_patch + '</body>', 1)
               text = text.replace('редактор ценников v20', 'редактор ценников v21', 1)
               text = text.replace('Версия v20:', 'Версия v21:', 1)
               text = text.replace(
-                  '<strong>Автоматическая компоновка:</strong> категория, название и описание расположены последовательно.',
-                  '<strong>Автоматическая компоновка:</strong> категория, название и описание расположены последовательно. Цена редактируется нажатием, перемещается своей ручкой ↕, а размер меняется ползунком «Размер цены».'
+                  '<strong>Автоматическая компоновка:</strong>',
+                  '<strong>Автоматическая компоновка:</strong> Цена редактируется нажатием, перемещается своей ручкой ↕, а размер меняется ползунком «Размер цены».',
+                  1
               )
               path.write_text(text, encoding='utf-8')
           PY
