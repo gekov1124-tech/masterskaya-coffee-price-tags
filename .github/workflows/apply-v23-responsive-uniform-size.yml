@@ -1,0 +1,63 @@
+name: Apply v23 responsive uniform name sizing
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-v23:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build v23 from v22
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('editor-v22.html').read_text(encoding='utf-8')
+
+          old_fit = """function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const desired=Math.max(20,44*(Number(settings.nameScale)||100)/100);let low=Math.min(20,desired),high=desired;if(!allFit(cards,high)){for(let step=0;step<10;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}}else low=high;uniformNamePx=Math.floor(low*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx))}"""
+
+          new_fit = """function maximumUniformFit(cards){let low=18,high=76;if(!allFit(cards,low))return low;for(let step=0;step<12;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return low}function responsiveUniformTarget(maximum,scale){const value=Math.min(160,Math.max(70,Number(scale)||100)),sizeAt100=maximum/1.18;if(value<=100)return Math.max(18,sizeAt100*(value/100));return sizeAt100+(maximum-sizeAt100)*((value-100)/60)}function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(target*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx))}"""
+
+          if old_fit not in source:
+              raise SystemExit('v22 uniform-fit function was not found')
+
+          result = source.replace(old_fit, new_fit, 1)
+          result = result.replace('редактор ценников v22', 'редактор ценников v23', 1)
+          result = result.replace('Версия v22:', 'Версия v23:', 1)
+          result = result.replace(
+              '.copy-zone{position:absolute;left:16px;right:16px;top:3px;bottom:58px;',
+              '.copy-zone{position:absolute;left:16px;right:16px;top:3px;bottom:44px;',
+              1
+          )
+          result = result.replace(
+              '.print-copy-zone{position:absolute;left:3mm;right:3mm;top:1mm;bottom:11mm;',
+              '.print-copy-zone{position:absolute;left:3mm;right:3mm;top:1mm;bottom:8.8mm;',
+              1
+          )
+          result = result.replace(
+              '<strong>Единый размер названий:</strong>',
+              '<strong>Единый регулируемый размер:</strong> ползунок теперь всегда изменяет общий размер названий. 160% — самый крупный единый размер, который безопасно помещается на всех ценниках текущего макета.',
+              1
+          )
+
+          Path('editor-v23.html').write_text(result, encoding='utf-8')
+          PY
+      - name: Commit v23
+        shell: bash
+        run: |
+          if git diff --quiet -- editor-v23.html; then
+            echo 'No v23 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v23.html
+          git commit -m 'Add v23 responsive uniform name sizing [skip ci]'
+          git push
