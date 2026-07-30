@@ -1,0 +1,209 @@
+name: Apply v24 quick-create editor
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-v24:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build v24 from v23
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('editor-v23.html')
+          target_path = Path('editor-v24.html')
+          source = source_path.read_text(encoding='utf-8')
+
+          quick_css = r'''
+.quick-create{display:grid;grid-template-columns:minmax(190px,.7fr) minmax(280px,1.7fr);gap:14px;align-items:center;margin:0 0 16px;padding:16px;border:1px solid rgba(90,53,21,.16);border-radius:17px;background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(244,239,231,.94));box-shadow:0 8px 24px rgba(42,27,16,.08)}
+.quick-create-copy h2{margin:0 0 5px;font-size:1.08rem}.quick-create-copy p{margin:0;color:var(--muted);font-size:.86rem;line-height:1.45}.quick-create-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}.quick-create-input{width:100%;min-height:48px;padding:11px 13px;border:2px solid rgba(90,53,21,.2);border-radius:12px;background:white;color:var(--ink);font-size:1rem;outline:0}.quick-create-input:focus{border-color:#8a5b2a;box-shadow:0 0 0 3px rgba(185,149,97,.18)}.quick-create-status{grid-column:1/-1;min-height:20px;margin-top:-4px;color:#4f6d4f;font-size:.82rem;font-weight:750}.quick-create-status.error{color:var(--danger)}
+@media(max-width:760px){.quick-create{grid-template-columns:1fr}.quick-create-form{grid-template-columns:1fr}.quick-create-form .btn{width:100%}}
+'''
+
+          quick_html = r'''
+<section class="quick-create" aria-label="Быстрое создание ценника">
+  <div class="quick-create-copy">
+    <h2>Новый ценник одной строкой</h2>
+    <p>Напишите только название и цену. Например: <strong>Круассан малина, 259</strong>.</p>
+  </div>
+  <form class="quick-create-form" id="quickCreateForm">
+    <input class="quick-create-input" id="quickCreateInput" type="text" inputmode="text" autocomplete="off" placeholder="Название товара, цена">
+    <button class="btn primary" type="submit">Создать ценник</button>
+  </form>
+  <div class="quick-create-status" id="quickCreateStatus" aria-live="polite"></div>
+</section>
+'''
+
+          quick_script = r'''
+<script id="v24QuickCreatePatch">
+(() => {
+  const form = document.getElementById('quickCreateForm');
+  const input = document.getElementById('quickCreateInput');
+  const status = document.getElementById('quickCreateStatus');
+  if (!form || !input || !status) return;
+
+  const normalize = value => String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[–—]/g, '-')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const seedCatalog = (() => {
+    try {
+      const parsed = JSON.parse(document.getElementById('embeddedItems').textContent || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  })();
+
+  const descriptionFallbacks = new Map(Object.entries({
+    'чизкейк карамель-миндаль':'на миндальном печенье',
+    'шоколад milka':'нежный молочный шоколад',
+    'чизкейк манго-маракуйя':'манго и маракуйя',
+    'чизкейк фисташка':'нежный фисташковый',
+    'чизкейк классика':'Нью-Йорк сливочный',
+    'чизкейк шоколадный':'насыщенный какао',
+    'чизкейк арахис-карамель':'арахис и карамель',
+    'макаронс':'миндальное пирожное',
+    'шоколадный торт':'бисквитный классический',
+    'наполеон':'слоёный с заварным кремом',
+    'медовик классика':'классический медовый',
+    'медовик шоко':'шоколадные коржи',
+    'маковый торт':'маковый бисквит',
+    'кольцо творожное':'с творогом',
+    'моти в ассортименте':'японский десерт',
+    'трайфл':'десерт в стаканчике',
+    'орешки со сгущенкой':'упаковка 3 шт',
+    'трубочка крем-чиз':'с нежным кремом',
+    'трубочка белковая':'с лёгким белковым кремом',
+    'трубочка со сгущенкой':'с варёной сгущенкой',
+    'хачапури':'Адыгейский и Гауда',
+    'слойка ветчина-сыр':'нежная ветчина с сыром',
+    'круассан классика':'французский сливочный',
+    'круассан малина/ваниль':'малина и ваниль',
+    'круассан шоколадный с ягодой вишней':'шоколад и вишня',
+    'слойка яблочная':'сочное яблоко',
+    'слойка вишневая':'сочная вишня',
+    'бон мак/черемуха':'сгущенка, грецкий орех',
+    'маковый дениш':'сдобная выпечка',
+    'батончик протеиновый bombar':'протеиновый',
+    'вода 0.5 без газа':'0.5 л питьевая'
+  }));
+
+  const categoryRules = [
+    ['ЧИЗКЕЙКИ И ТОРТЫ', /(чизкейк|торт|медовик|наполеон)/],
+    ['КРУАССАН ПРЕМИУМ', /(круассан.*(лосос|куриц|ветчин)|цезарь.*(лосос|куриц))/],
+    ['СВЕЖАЯ ВЫПЕЧКА', /(круассан|слойк|дениш|хачапур|бон мак|черемух)/],
+    ['СЭНДВИЧИ', /(сэндвич|бутерброд)/],
+    ['РОЛЛЫ', /ролл/],
+    ['САЛАТ ЦЕЗАРЬ', /(салат цезарь|цезарь)/],
+    ['ОБЕДЫ И САЛАТЫ', /(салат|обед|сырник|запеканк|блинчик|печеноч)/],
+    ['ПОЛЕЗНО И ЗОЖ', /(без сахар|протеин|веган|\bпп\b)/],
+    ['ПЕЧЕНЬЕ', /(печень|кукис|безе)/],
+    ['НАПИТКИ И СНАКИ', /(кола|вода|адреналин|лимонад|сок|напиток|жвачк|жевачк|батончик шоколад)/],
+    ['ПИРОЖНЫЕ И ДЕСЕРТЫ', /(макаронс|моти|трайфл|\bшу\b|трубоч|орешк|десерт|пирожн)/],
+    ['СЫТНОЕ МЕНЮ', /чиабатт/]
+  ];
+
+  function parseLine(raw) {
+    const value = String(raw || '').trim();
+    const match = value.match(/^(.*?)(?:\s*[,;|]\s*|\s+)(\d+(?:[.,]\d{1,2})?)\s*(?:₽|р\.?|руб(?:\.|лей|ля|ль)?)?\s*$/i);
+    if (!match) return null;
+    const name = match[1].replace(/[\s,;|–—-]+$/g, '').trim();
+    const price = match[2].replace(',', '.');
+    if (!name || !price) return null;
+    return {name, price};
+  }
+
+  function findTemplate(name) {
+    const key = normalize(name);
+    const combined = [...items, ...seedCatalog];
+    return combined.find(item => normalize(item?.name) === key) || null;
+  }
+
+  function inferCategory(name) {
+    const key = normalize(name);
+    const found = categoryRules.find(([, pattern]) => pattern.test(key));
+    return found ? found[0] : 'ПРОЧЕЕ';
+  }
+
+  function createFromLine(raw) {
+    const parsed = parseLine(raw);
+    if (!parsed) {
+      status.className = 'quick-create-status error';
+      status.textContent = 'Не удалось определить цену. Напишите, например: Круассан малина, 259';
+      input.focus();
+      return;
+    }
+
+    const template = findTemplate(parsed.name);
+    const key = normalize(parsed.name);
+    const category = String(template?.category || inferCategory(parsed.name));
+    const subtitle = String(template?.subtitle || descriptionFallbacks.get(key) || '');
+    const item = normalizeItem({
+      category,
+      name: parsed.name,
+      subtitle,
+      price: parsed.price,
+      pageBreakBefore: false
+    });
+
+    items.push(item);
+    save();
+    render(item.id);
+    input.value = '';
+    status.className = 'quick-create-status';
+    status.textContent = `Создан ценник «${parsed.name}» — ${parsed.price} ₽. Раздел: ${category}.`;
+    requestAnimationFrame(() => input.focus());
+  }
+
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    createFromLine(input.value);
+  });
+
+  input.addEventListener('input', () => {
+    if (status.classList.contains('error')) {
+      status.className = 'quick-create-status';
+      status.textContent = '';
+    }
+  });
+})();
+</script>
+'''
+
+          result = source
+          result = result.replace('редактор ценников v23', 'редактор ценников v24', 1)
+          result = result.replace('Версия v23:', 'Версия v24:', 1)
+          result = result.replace('@page{size:A4 landscape;margin:5mm}', quick_css + '@page{size:A4 landscape;margin:5mm}', 1)
+          result = result.replace('</nav>', '</nav>' + quick_html, 1)
+          result = result.replace('id="addBtn">＋ Добавить</button>', 'id="addBtn">＋ Пустой ценник</button>', 1)
+          result = result.replace('</body>', quick_script + '</body>', 1)
+
+          target_path.write_text(result, encoding='utf-8')
+          PY
+      - name: Commit v24
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v24.html)" ]; then
+            echo 'No v24 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v24.html
+          git commit -m 'Add v24 one-line automatic price tag creation [skip ci]'
+          git push
