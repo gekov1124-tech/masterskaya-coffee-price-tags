@@ -1,0 +1,164 @@
+name: Apply v22 uniform name sizing
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make product-name size visually uniform
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          marker = '/* v22 uniform product-name sizing */'
+
+          if marker not in text:
+              css_patch = (
+                  '.name,.tag-editor.name-long .name,.tag-editor.name-xlong .name{font-size:var(--uniform-editor-name-size,calc(2.75rem * var(--name-scale)))}'
+                  '.print-name,.print-card.name-long .print-name,.print-card.name-xlong .print-name{font-size:var(--uniform-print-name-size,calc(6.2mm * var(--name-scale)))}'
+                  + marker
+              )
+              text = text.replace('@page{size:A4 landscape;margin:5mm}', css_patch + '@page{size:A4 landscape;margin:5mm}', 1)
+
+              runtime_patch = r'''
+<script id="v22UniformNamePatch">
+(() => {
+  let uniformNamePx = Math.max(20, 44 * (Number(settings.nameScale) || 100) / 100);
+  let uniformFitFrame = 0;
+
+  function resizeField(element, maximum) {
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, maximum)}px`;
+  }
+
+  function prepareCard(card, size) {
+    const zone = card.querySelector(".copy-zone");
+    const category = card.querySelector(".category");
+    const name = card.querySelector(".name");
+    const subtitle = card.querySelector(".subtitle");
+    if (!zone || !name) return null;
+
+    zone.style.transform = "";
+    name.style.fontSize = `${size}px`;
+    resizeField(category, 46);
+    resizeField(name, 132);
+    resizeField(subtitle, 62);
+    return {zone, category, name, subtitle};
+  }
+
+  function requiredHeight(parts) {
+    const blocks = [parts.category, parts.name, parts.subtitle]
+      .map(element => element?.closest(".copy-block"))
+      .filter(Boolean);
+    const style = getComputedStyle(parts.zone);
+    const gap = Number.parseFloat(style.rowGap || style.gap) || 0;
+    return blocks.reduce((sum, block) => sum + block.getBoundingClientRect().height, 0)
+      + gap * Math.max(0, blocks.length - 1);
+  }
+
+  function everyCardFits(cards, size) {
+    for (const card of cards) {
+      const parts = prepareCard(card, size);
+      if (!parts) continue;
+      if (requiredHeight(parts) > parts.zone.clientHeight - 3) return false;
+    }
+    return true;
+  }
+
+  function applyUniformNameSize() {
+    const cards = [...document.querySelectorAll(".tag-editor")];
+    if (!cards.length) return;
+
+    const desired = Math.max(20, 44 * (Number(settings.nameScale) || 100) / 100);
+    let low = Math.min(20, desired);
+    let high = desired;
+
+    if (!everyCardFits(cards, high)) {
+      for (let step = 0; step < 10; step += 1) {
+        const middle = (low + high) / 2;
+        if (everyCardFits(cards, middle)) low = middle;
+        else high = middle;
+      }
+    } else {
+      low = high;
+    }
+
+    uniformNamePx = Math.floor(low * 10) / 10;
+    document.documentElement.style.setProperty("--uniform-editor-name-size", `${uniformNamePx}px`);
+    document.documentElement.style.setProperty("--uniform-print-name-size", `${6.2 * uniformNamePx / 44}mm`);
+
+    for (const card of cards) prepareCard(card, uniformNamePx);
+  }
+
+  function queueUniformNameFit() {
+    cancelAnimationFrame(uniformFitFrame);
+    uniformFitFrame = requestAnimationFrame(applyUniformNameSize);
+  }
+
+  fitCard = function() {
+    queueUniformNameFit();
+  };
+
+  fitAll = function() {
+    queueUniformNameFit();
+  };
+
+  const previousRender = render;
+  render = function(...args) {
+    const result = previousRender(...args);
+    queueUniformNameFit();
+    return result;
+  };
+
+  const previousBuildPrintCard = buildPrintCard;
+  buildPrintCard = function(item) {
+    const card = previousBuildPrintCard(item);
+    const name = card.querySelector(".print-name");
+    if (name) name.style.fontSize = `${6.2 * uniformNamePx / 44}mm`;
+    return card;
+  };
+
+  window.addEventListener("resize", queueUniformNameFit);
+  if (document.fonts?.ready) document.fonts.ready.then(queueUniformNameFit).catch(() => {});
+  queueUniformNameFit();
+})();
+</script>
+'''
+              text = text.replace('</body>', runtime_patch + '</body>', 1)
+              text = text.replace('редактор ценников v21', 'редактор ценников v22', 1)
+              text = text.replace('Версия v21:', 'Версия v22:', 1)
+              text = text.replace(
+                  'При увеличении названия описание само сдвигается ниже; если места не хватает, уменьшается только название конкретного ценника.',
+                  'Все названия товаров теперь имеют единый визуальный размер. Длинные названия переносятся на дополнительные строки, а общий размер автоматически подбирается так, чтобы ни один ценник не обрезался.'
+              )
+              text = text.replace(
+                  '<strong>Автоматическая компоновка:</strong>',
+                  '<strong>Единый размер названий:</strong> ползунок изменяет все названия одинаково. Система подбирает один общий размер для текущего макета, переносит длинные названия и сохраняет визуальное единообразие. <strong>Автоматическая компоновка:</strong>',
+                  1
+              )
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit update
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Use uniform product-name size in v22 [skip ci]'
+          git push
