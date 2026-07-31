@@ -1,0 +1,181 @@
+name: Apply v25 without category and larger names
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-v25:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build v25 from v24
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          source_path = Path('editor-v24.html')
+          target_path = Path('editor-v25.html')
+          text = source_path.read_text(encoding='utf-8')
+
+          def required(old: str, new: str, count: int = 1) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'Required source fragment not found: {old[:140]}')
+              text = text.replace(old, new, count)
+
+          # Version and migration keys.
+          required('редактор ценников v24', 'редактор ценников v25')
+          required('Версия v24:', 'Версия v25:')
+          required('const STORAGE_KEY="masterskaya-price-tags-v24";', 'const STORAGE_KEY="masterskaya-price-tags-v25";')
+          required(
+              'const LEGACY_ITEMS_KEYS=["masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"];',
+              'const LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"];'
+          )
+          required('const SETTINGS_KEY="masterskaya-price-tags-settings-v24";', 'const SETTINGS_KEY="masterskaya-price-tags-settings-v25";')
+          required(
+              'const LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"];',
+              'const LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"];'
+          )
+
+          # Remove the category controls from the visible interface.
+          text, n1 = re.subn(
+              r'\s*<div class="control"><label for="categoryScale">Размер раздела</label><input id="categoryScale"[^>]*><output class="percent" id="categoryOut"></output></div>',
+              '', text, count=1
+          )
+          text, n2 = re.subn(
+              r'\s*<div class="control select"><label for="categoryFont">Шрифт раздела</label><select id="categoryFont"></select></div>',
+              '', text, count=1
+          )
+          if n1 != 1 or n2 != 1:
+              raise SystemExit('Category controls were not removed exactly once')
+
+          # Extend the title-size slider and provide more vertical room.
+          required(
+              '<input id="nameScale" type="range" min="70" max="160" step="5">',
+              '<input id="nameScale" type="range" min="70" max="240" step="5">'
+          )
+          required(
+              '.copy-zone{position:absolute;left:16px;right:16px;top:3px;bottom:44px;',
+              '.copy-zone{position:absolute;left:16px;right:16px;top:3px;bottom:31px;'
+          )
+          required(
+              '.print-copy-zone{position:absolute;left:3mm;right:3mm;top:1mm;bottom:8.8mm;',
+              '.print-copy-zone{position:absolute;left:3mm;right:3mm;top:1mm;bottom:6.8mm;'
+          )
+          required('.name{min-height:43px;', '.name{min-height:52px;')
+
+          # Category no longer exists in the data model or movable blocks.
+          required(
+              'function emptyOffsets(){return{category:{x:0,y:0},name:{x:0,y:0},subtitle:{x:0,y:0},price:{x:0,y:0}}}',
+              'function emptyOffsets(){return{name:{x:0,y:0},subtitle:{x:0,y:0},price:{x:0,y:0}}}'
+          )
+          required(
+              'function positionsToOffsets(raw){const out=emptyOffsets();for(const key of ["category","name","subtitle"]){',
+              'function positionsToOffsets(raw){const out=emptyOffsets();for(const key of ["name","subtitle"]){'
+          )
+          required(
+              'function normalizeItem(raw){return{id:String(raw?.id||uid()),category:String(raw?.category??"НОВАЯ КАТЕГОРИЯ"),name:String(raw?.name??"Новый ценник"),subtitle:String(raw?.subtitle??""),price:String(raw?.price??"0").replace(/[^0-9.,]/g,""),pageBreakBefore:Boolean(raw?.pageBreakBefore),offsetH:raw?.offsetH?cloneOffsets(raw.offsetH):positionsToOffsets(raw?.positionsH||raw?.positions),offsetV:raw?.offsetV?cloneOffsets(raw.offsetV):positionsToOffsets(raw?.positionsV)}}',
+              'function normalizeItem(raw){return{id:String(raw?.id||uid()),name:String(raw?.name??"Новый ценник"),subtitle:String(raw?.subtitle??""),price:String(raw?.price??"0").replace(/[^0-9.,]/g,""),pageBreakBefore:Boolean(raw?.pageBreakBefore),offsetH:raw?.offsetH?cloneOffsets(raw.offsetH):positionsToOffsets(raw?.positionsH||raw?.positions),offsetV:raw?.offsetV?cloneOffsets(raw.offsetV):positionsToOffsets(raw?.positionsV)}}'
+          )
+
+          # Remove category settings access so deleted controls cannot break startup.
+          old_settings = '''function applySettings(){const root=document.documentElement;root.style.setProperty("--category-scale",settings.categoryScale/100);root.style.setProperty("--subtitle-scale",settings.subtitleScale/100);root.style.setProperty("--price-scale",settings.priceScale/100);root.style.setProperty("--name-font",FONT_STACKS[settings.nameFont]||FONT_STACKS["Marck Script"]);root.style.setProperty("--subtitle-font",FONT_STACKS[settings.textFont]||FONT_STACKS["PT Sans"]);root.style.setProperty("--category-font",FONT_STACKS[settings.categoryFont]||FONT_STACKS["PT Sans"]);root.style.setProperty("--price-font",FONT_STACKS[settings.priceFont]||FONT_STACKS["Marck Script"]);root.style.setProperty("--tag-bg",background());$("layoutSelect").value=settings.layout;for(const key of ["category","name","subtitle","price"]){$(`${key}Scale`).value=settings[`${key}Scale`];$(`${key}Out`).textContent=`${settings[`${key}Scale`]}%`}$('bgColor').value=settings.bgColor;$('bgStyle').value=settings.bgStyle;fontOptions($('nameFont'),settings.nameFont);fontOptions($('textFont'),settings.textFont);fontOptions($('categoryFont'),settings.categoryFont);fontOptions($('priceFont'),settings.priceFont);pageStyle.textContent=settings.layout==="horizontal"?"@page{size:A4 landscape;margin:5mm}":"@page{size:A4 portrait;margin:5mm}"}'''
+          new_settings = '''function applySettings(){const root=document.documentElement;root.style.setProperty("--subtitle-scale",settings.subtitleScale/100);root.style.setProperty("--price-scale",settings.priceScale/100);root.style.setProperty("--name-font",FONT_STACKS[settings.nameFont]||FONT_STACKS["Marck Script"]);root.style.setProperty("--subtitle-font",FONT_STACKS[settings.textFont]||FONT_STACKS["PT Sans"]);root.style.setProperty("--price-font",FONT_STACKS[settings.priceFont]||FONT_STACKS["Marck Script"]);root.style.setProperty("--tag-bg",background());$("layoutSelect").value=settings.layout;for(const key of ["name","subtitle","price"]){$(`${key}Scale`).value=settings[`${key}Scale`];$(`${key}Out`).textContent=`${settings[`${key}Scale`]}%`}$('bgColor').value=settings.bgColor;$('bgStyle').value=settings.bgStyle;fontOptions($('nameFont'),settings.nameFont);fontOptions($('textFont'),settings.textFont);fontOptions($('priceFont'),settings.priceFont);pageStyle.textContent=settings.layout==="horizontal"?"@page{size:A4 landscape;margin:5mm}":"@page{size:A4 portrait;margin:5mm}"}'''
+          required(old_settings, new_settings)
+
+          # Auto-flow now measures name and description only.
+          required(
+              "function prepareCard(card,size){const zone=card.querySelector('.copy-zone'),category=card.querySelector('.category'),name=card.querySelector('.name'),subtitle=card.querySelector('.subtitle');if(!zone||!name)return null;name.style.fontSize=`${size}px`;resizeField(category,46);resizeField(name,132);resizeField(subtitle,62);return{zone,category,name,subtitle}}",
+              "function prepareCard(card,size){const zone=card.querySelector('.copy-zone'),name=card.querySelector('.name'),subtitle=card.querySelector('.subtitle');if(!zone||!name)return null;name.style.fontSize=`${size}px`;resizeField(name,190);resizeField(subtitle,72);return{zone,name,subtitle}}"
+          )
+          required(
+              "function neededHeight(parts){const blocks=[parts.category,parts.name,parts.subtitle].map(element=>element?.closest('.copy-block')).filter(Boolean),gap=parseFloat(getComputedStyle(parts.zone).gap)||0;return blocks.reduce((sum,block)=>sum+block.offsetHeight,0)+gap*Math.max(0,blocks.length-1)}",
+              "function neededHeight(parts){const blocks=[parts.name,parts.subtitle].map(element=>element?.closest('.copy-block')).filter(Boolean),gap=parseFloat(getComputedStyle(parts.zone).gap)||0;return blocks.reduce((sum,block)=>sum+block.offsetHeight,0)+gap*Math.max(0,blocks.length-1)}"
+          )
+          required('function maximumUniformFit(cards){let low=18,high=76;', 'function maximumUniformFit(cards){let low=18,high=118;')
+          required(
+              'function responsiveUniformTarget(maximum,scale){const value=Math.min(160,Math.max(70,Number(scale)||100)),sizeAt100=maximum/1.18;if(value<=100)return Math.max(18,sizeAt100*(value/100));return sizeAt100+(maximum-sizeAt100)*((value-100)/60)}',
+              'function responsiveUniformTarget(maximum,scale){const value=Math.min(240,Math.max(70,Number(scale)||100)),sizeAt100=maximum/1.7;if(value<=100)return Math.max(18,sizeAt100*(value/100));return sizeAt100+(maximum-sizeAt100)*((value-100)/140)}'
+          )
+
+          # Do not render or print a category line.
+          required(
+              "zone.append(movableBlock('category','category',item.category,positions.category),movableBlock('name','name',item.name,positions.name),movableBlock('subtitle','subtitle',item.subtitle,positions.subtitle));",
+              "zone.append(movableBlock('name','name',item.name,positions.name),movableBlock('subtitle','subtitle',item.subtitle,positions.subtitle));"
+          )
+          required(
+              "zone.append(printBlock('print-category',item.category,positions.category),printBlock('print-name',settings.layout==='vertical'?smartBreak(item.name):item.name,positions.name),printBlock('print-subtitle',item.subtitle,positions.subtitle));",
+              "zone.append(printBlock('print-name',settings.layout==='vertical'?smartBreak(item.name):item.name,positions.name),printBlock('print-subtitle',item.subtitle,positions.subtitle));"
+          )
+
+          # Quick creation now uses only name, optional known description and price.
+          required(
+              "const category=String(template?.category||inferCategory(parsed.name));const subtitle=String(template?.subtitle||'');const item=normalizeItem({category,name:parsed.name,subtitle,price:parsed.price,pageBreakBefore:false});",
+              "const subtitle=String(template?.subtitle||'');const item=normalizeItem({name:parsed.name,subtitle,price:parsed.price,pageBreakBefore:false});"
+          )
+          required(
+              "status.textContent=`Создан ценник «${parsed.name}» — ${parsed.price} ₽. Раздел: ${category}.`;",
+              "status.textContent=`Создан ценник «${parsed.name}» — ${parsed.price} ₽.`;"
+          )
+
+          # Event bindings and defaults no longer reference removed category controls.
+          required(
+              "for(const key of ['category','name','subtitle','price'])$(`${key}Scale`).addEventListener('input',()=>{",
+              "for(const key of ['name','subtitle','price'])$(`${key}Scale`).addEventListener('input',()=>{"
+          )
+          required(
+              "[['nameFont','nameFont'],['textFont','textFont'],['categoryFont','categoryFont'],['priceFont','priceFont']]",
+              "[['nameFont','nameFont'],['textFont','textFont'],['priceFont','priceFont']]"
+          )
+          required(
+              "settings={...settings,categoryScale:100,nameScale:100,subtitleScale:100,priceScale:100}",
+              "settings={...settings,nameScale:100,subtitleScale:100,priceScale:100}"
+          )
+          required(
+              "settings={...settings,nameFont:DEFAULT_SETTINGS.nameFont,textFont:DEFAULT_SETTINGS.textFont,categoryFont:DEFAULT_SETTINGS.categoryFont,priceFont:DEFAULT_SETTINGS.priceFont,bgColor:DEFAULT_SETTINGS.bgColor,bgStyle:DEFAULT_SETTINGS.bgStyle}",
+              "settings={...settings,nameFont:DEFAULT_SETTINGS.nameFont,textFont:DEFAULT_SETTINGS.textFont,priceFont:DEFAULT_SETTINGS.priceFont,bgColor:DEFAULT_SETTINGS.bgColor,bgStyle:DEFAULT_SETTINGS.bgStyle}"
+          )
+          required(
+              "normalizeItem({category:'НОВАЯ КАТЕГОРИЯ',name:'Новый ценник',subtitle:'Описание',price:'0'})",
+              "normalizeItem({name:'Новый ценник',subtitle:'Описание',price:'0'})"
+          )
+          required(
+              "resizeField(event.target,field==='name'?132:field==='subtitle'?62:46);",
+              "resizeField(event.target,field==='name'?190:field==='subtitle'?72:46);"
+          )
+
+          # User-facing text and downloaded filename.
+          required(
+              '<p>Версия v25: название и описание находятся в общем автоматическом потоке. При увеличении названия описание само сдвигается ниже; если места не хватает, уменьшается только название конкретного ценника. Вертикальная композиция и синхронная печать на Android сохранены.</p>',
+              '<p>Версия v25: раздел полностью удалён. На ценнике остаются только название, описание и цена. Размер названия регулируется до 240%, а программа автоматически использует самый крупный единый размер, безопасный для всех ценников.</p>'
+          )
+          required(
+              '<p class="note"><strong>Быстрое создание:</strong> введите название и цену через запятую или пробел. Для знакомого товара программа возьмёт категорию и описание из каталога. Для нового товара подберёт категорию по названию; всё можно затем поправить вручную.</p>',
+              '<p class="note"><strong>Быстрое создание:</strong> введите только название и цену через запятую или пробел. Для знакомого товара программа автоматически добавит сохранённое описание. Разделов в ценниках больше нет.</p>'
+          )
+          required(
+              "'редактор-ценников-мастерская-кофе-v24.html'",
+              "'редактор-ценников-мастерская-кофе-v25.html'"
+          )
+
+          target_path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit v25
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v25.html)" ]; then
+            echo 'No v25 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v25.html
+          git commit -m 'Remove category and allow larger names in v25 [skip ci]'
+          git push
