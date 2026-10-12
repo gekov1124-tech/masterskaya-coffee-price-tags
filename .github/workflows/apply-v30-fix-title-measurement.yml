@@ -1,0 +1,95 @@
+name: Build v30 fixed title measurement
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v30:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build v30 from v28
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('editor-v28.html')
+          target = Path('editor-v30.html')
+          text = source.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'Required fragment not found: {old[:180]}')
+              text = text.replace(old, new, 1)
+
+          replace_once('редактор ценников v28', 'редактор ценников v30')
+          replace_once('Версия v28:', 'Версия v30:')
+          replace_once('const STORAGE_KEY="masterskaya-price-tags-v28",', 'const STORAGE_KEY="masterskaya-price-tags-v30",')
+          replace_once(
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v27","masterskaya-price-tags-v26","masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]',
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v28","masterskaya-price-tags-v27","masterskaya-price-tags-v26","masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]'
+          )
+          replace_once('SETTINGS_KEY="masterskaya-price-tags-settings-v28",', 'SETTINGS_KEY="masterskaya-price-tags-settings-v30",')
+          replace_once(
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v27","masterskaya-price-tags-settings-v26","masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]',
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v28","masterskaya-price-tags-settings-v27","masterskaya-price-tags-settings-v26","masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]'
+          )
+
+          replace_once(
+              '<p>Версия v30: исправлен расчёт общего размера названий. Ручное перемещение блоков больше не уменьшает шрифт на всех ценниках; 500% теперь использует реальный максимально возможный размер текста.</p>',
+              '<p>Версия v30: исправлена ошибка измерения текстового поля на мобильных браузерах. Значение 500% теперь действительно увеличивает названия до максимально возможного единого размера без обрезания.</p>'
+          )
+          replace_once(
+              '<p class="note"><strong>Исправление размера:</strong> единый размер рассчитывается только по тексту и доступной площади. Ранее один вручную сдвинутый блок ошибочно уменьшал названия на всех карточках.</p>',
+              '<p class="note"><strong>Исправление v30:</strong> прежняя проверка сравнивала внутреннюю высоту textarea с высотой, уменьшенной рамкой, и ошибочно считала любой текст обрезанным. Теперь размер определяется по фактической высоте блоков.</p>'
+          )
+
+          replace_once(
+              'function resizeField(element){if(!element)return;element.style.height="auto";element.style.height=`${Math.ceil(element.scrollHeight)}px`}',
+              'function resizeField(element){if(!element)return;element.style.height="0px";element.style.height=`${Math.ceil(element.scrollHeight)+4}px`}'
+          )
+
+          replace_once(
+              "function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(!parts)continue;if(neededHeight(parts)>parts.zone.clientHeight-3)return false;if(parts.name.scrollHeight>parts.name.clientHeight+1)return false;if(parts.subtitle&&parts.subtitle.scrollHeight>parts.subtitle.clientHeight+1)return false}return true}",
+              "function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(!parts)continue;if(neededHeight(parts)>parts.zone.clientHeight-3)return false}return true}"
+          )
+
+          replace_once(
+              'function maximumUniformFit(cards){let low=14,high=280;if(!allFit(cards,low))return low;for(let step=0;step<16;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return Math.max(low,14)}',
+              'function maximumUniformFit(cards){let low=14,high=320;if(!allFit(cards,low))return low;for(let step=0;step<17;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return Math.max(low,14)}'
+          )
+
+          replace_once(
+              "function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(Math.min(target,maximum*.985)*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx));const output=$('nameOut');if(output)output.textContent=`${settings.nameScale}% · ${Math.round(uniformNamePx)}px`}",
+              "function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(Math.min(target,maximum*.985)*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx));const output=$('nameOut');if(output)output.textContent=`${settings.nameScale}% · ${Math.round(uniformNamePx)}px`;document.documentElement.dataset.actualNameSize=String(Math.round(uniformNamePx))}"
+          )
+
+          replace_once(
+              "'редактор-ценников-мастерская-кофе-v28.html'",
+              "'редактор-ценников-мастерская-кофе-v30.html'"
+          )
+
+          target.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit v30
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v30.html)" ]; then
+            echo 'No v30 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v30.html
+          git commit -m 'Fix mobile textarea title measurement in v30 [skip ci]'
+          git pull --rebase origin main
+          git push origin main
