@@ -1,0 +1,86 @@
+name: Build v28 title size fix
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v28:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build v28 from v27
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('editor-v27.html')
+          target = Path('editor-v28.html')
+          text = source.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'Required fragment not found: {old[:200]}')
+              text = text.replace(old, new, 1)
+
+          replace_once('редактор ценников v27', 'редактор ценников v28')
+          replace_once('Версия v27:', 'Версия v28:')
+          replace_once('const STORAGE_KEY="masterskaya-price-tags-v27",', 'const STORAGE_KEY="masterskaya-price-tags-v28",')
+          replace_once(
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v26","masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]',
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v27","masterskaya-price-tags-v26","masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]'
+          )
+          replace_once('SETTINGS_KEY="masterskaya-price-tags-settings-v27",', 'SETTINGS_KEY="masterskaya-price-tags-settings-v28",')
+          replace_once(
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v26","masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]',
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v27","masterskaya-price-tags-settings-v26","masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]'
+          )
+
+          replace_once(
+              '<p>Версия v28: крупные названия больше не обрезаются. Ползунок увеличен до 500%, а программа проверяет реальную высоту текста, переносы и ручные смещения перед печатью.</p>',
+              '<p>Версия v28: исправлен расчёт общего размера названий. Ручное перемещение блоков больше не уменьшает шрифт на всех ценниках; 500% теперь использует реальный максимально возможный размер текста.</p>'
+          )
+          replace_once(
+              '<p class="note"><strong>Крупный текст:</strong> размер названия регулируется до 500%. Все ценники используют один фактический размер, а программа автоматически ограничивает его только реальными границами карточки — без обрезания букв.</p>',
+              '<p class="note"><strong>Исправление размера:</strong> единый размер рассчитывается только по тексту и доступной площади. Ранее один вручную сдвинутый блок ошибочно уменьшал названия на всех карточках.</p>'
+          )
+
+          old_fit = "function blockInside(zone,element){const block=element?.closest('.copy-block');if(!block)return true;const zoneRect=zone.getBoundingClientRect(),blockRect=block.getBoundingClientRect(),margin=1;return blockRect.left>=zoneRect.left-margin&&blockRect.right<=zoneRect.right+margin&&blockRect.top>=zoneRect.top-margin&&blockRect.bottom<=zoneRect.bottom+margin}function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(!parts)continue;if(neededHeight(parts)>parts.zone.clientHeight-3)return false;if(parts.name.scrollHeight>parts.name.clientHeight+1)return false;if(parts.subtitle&&parts.subtitle.scrollHeight>parts.subtitle.clientHeight+1)return false;if(!blockInside(parts.zone,parts.name)||!blockInside(parts.zone,parts.subtitle))return false}return true}"
+          new_fit = "function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(!parts)continue;if(neededHeight(parts)>parts.zone.clientHeight-3)return false;if(parts.name.scrollHeight>parts.name.clientHeight+1)return false;if(parts.subtitle&&parts.subtitle.scrollHeight>parts.subtitle.clientHeight+1)return false}return true}"
+          replace_once(old_fit, new_fit)
+
+          replace_once(
+              'function maximumUniformFit(cards){let low=14,high=220;if(!allFit(cards,low))return low;for(let step=0;step<15;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return Math.max(low,14)}',
+              'function maximumUniformFit(cards){let low=14,high=280;if(!allFit(cards,low))return low;for(let step=0;step<16;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return Math.max(low,14)}'
+          )
+          replace_once(
+              "function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(Math.min(target,maximum*.985)*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx))}",
+              "function applyUniformFit(){const cards=[...document.querySelectorAll('.tag-editor')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(Math.min(target,maximum*.985)*10)/10;document.documentElement.style.setProperty('--uniform-editor-name-size',`${uniformNamePx}px`);document.documentElement.style.setProperty('--uniform-print-name-size',`${6.2*uniformNamePx/44}mm`);cards.forEach(card=>prepareCard(card,uniformNamePx));const output=$('nameOut');if(output)output.textContent=`${settings.nameScale}% · ${Math.round(uniformNamePx)}px`}"
+          )
+          replace_once(
+              "'редактор-ценников-мастерская-кофе-v27.html'",
+              "'редактор-ценников-мастерская-кофе-v28.html'"
+          )
+
+          target.write_text(text,encoding='utf-8')
+          PY
+
+      - name: Commit v28
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v28.html)" ]; then
+            echo 'No v28 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v28.html
+          git commit -m 'Fix uniform title size calculation in v28 [skip ci]'
+          git push
