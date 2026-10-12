@@ -1,0 +1,135 @@
+name: Build v27 safe large names
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v27:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build v27 from v26
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('editor-v26.html')
+          target = Path('editor-v27.html')
+          text = source.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'Required fragment not found: {old[:180]}')
+              text = text.replace(old, new, 1)
+
+          replace_once('редактор ценников v26', 'редактор ценников v27')
+          replace_once('Версия v26:', 'Версия v27:')
+          replace_once('const STORAGE_KEY="masterskaya-price-tags-v26",', 'const STORAGE_KEY="masterskaya-price-tags-v27",')
+          replace_once(
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]',
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v26","masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]'
+          )
+          replace_once('SETTINGS_KEY="masterskaya-price-tags-settings-v26",', 'SETTINGS_KEY="masterskaya-price-tags-settings-v27",')
+          replace_once(
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]',
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v26","masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]'
+          )
+
+          replace_once(
+              '<p>Версия v27: можно вставить сразу несколько названий с ценами — по одному товару на строку. Программа создаст несколько ценников и автоматически пропустит названия, которые уже существуют.</p>',
+              '<p>Версия v27: крупные названия больше не обрезаются. Ползунок увеличен до 500%, а программа проверяет реальную высоту текста, переносы и ручные смещения перед печатью.</p>'
+          )
+          replace_once(
+              '<input id="nameScale" type="range" min="60" max="300" step="5">',
+              '<input id="nameScale" type="range" min="60" max="500" step="5">'
+          )
+          replace_once(
+              '<p class="note"><strong>Массовое создание:</strong> вставьте список, где каждый ценник расположен на отдельной строке. Совпадения проверяются без учёта регистра, лишних пробелов и различий «ё/е». Уже существующие названия и повторы внутри списка пропускаются.</p>',
+              '<p class="note"><strong>Крупный текст:</strong> размер названия регулируется до 500%. Все ценники используют один фактический размер, а программа автоматически ограничивает его только реальными границами карточки — без обрезания букв.</p>'
+          )
+
+          replace_once(
+              '.card-shell.vertical .rotator{width:360px;height:220px;transform:translate(-50%,-50%) rotate(-90deg)}',
+              '.card-shell.vertical .rotator{width:374px;height:228px;transform:translate(-50%,-50%) rotate(-90deg)}'
+          )
+          replace_once(
+              '.copy-zone{position:absolute;left:16px;right:16px;top:4px;bottom:31px;',
+              '.copy-zone{position:absolute;left:10px;right:10px;top:3px;bottom:30px;'
+          )
+          replace_once(
+              '.name{min-height:52px;font-family:var(--name-font);font-size:var(--uniform-editor-name-size);font-weight:400;line-height:.94;white-space:pre-wrap;overflow-wrap:anywhere}',
+              '.name{min-height:52px;font-family:var(--name-font);font-size:var(--uniform-editor-name-size);font-weight:400;line-height:.94;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}'
+          )
+          replace_once(
+              '.card-shell.vertical .move-handle{left:15px;transform:translate(-50%,-50%) rotate(90deg)}.card-shell.vertical .field{padding-left:36px;padding-right:10px}',
+              '.card-shell.vertical .move-handle{left:13px;transform:translate(-50%,-50%) rotate(90deg)}.card-shell.vertical .field{padding-left:29px;padding-right:7px}'
+          )
+          replace_once(
+              '.print-copy-zone{position:absolute;left:3mm;right:3mm;top:1mm;bottom:6.8mm;',
+              '.print-copy-zone{position:absolute;left:1.8mm;right:1.8mm;top:.8mm;bottom:6.5mm;'
+          )
+          replace_once(
+              '.print-name{font-family:var(--name-font);font-size:var(--uniform-print-name-size);line-height:.94;white-space:pre-line;overflow-wrap:anywhere}',
+              '.print-name{font-family:var(--name-font);font-size:var(--uniform-print-name-size);line-height:.94;white-space:pre-line;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}'
+          )
+          replace_once(
+              '.print-page.vertical .print-rotator{width:60mm;height:40mm;transform:translate(-50%,-50%) rotate(-90deg)}',
+              '.print-page.vertical .print-rotator{width:63mm;height:42mm;transform:translate(-50%,-50%) rotate(-90deg)}'
+          )
+
+          replace_once(
+              'function resizeField(element,maximum){if(!element)return;element.style.height="auto";element.style.height=`${Math.min(element.scrollHeight,maximum)}px`}',
+              'function resizeField(element){if(!element)return;element.style.height="auto";element.style.height=`${Math.ceil(element.scrollHeight)}px`}'
+          )
+          replace_once(
+              "function prepareCard(card,size){const zone=card.querySelector('.copy-zone'),name=card.querySelector('.name'),subtitle=card.querySelector('.subtitle');if(!zone||!name)return null;name.style.fontSize=`${size}px`;resizeField(name,210);resizeField(subtitle,82);return{zone,name,subtitle}}",
+              "function prepareCard(card,size){const zone=card.querySelector('.copy-zone'),name=card.querySelector('.name'),subtitle=card.querySelector('.subtitle');if(!zone||!name)return null;name.style.fontSize=`${size}px`;resizeField(name);resizeField(subtitle);return{zone,name,subtitle}}"
+          )
+          replace_once(
+              "function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(parts&&neededHeight(parts)>parts.zone.clientHeight-3)return false}return true}",
+              "function blockInside(zone,element){const block=element?.closest('.copy-block');if(!block)return true;const zoneRect=zone.getBoundingClientRect(),blockRect=block.getBoundingClientRect(),margin=1;return blockRect.left>=zoneRect.left-margin&&blockRect.right<=zoneRect.right+margin&&blockRect.top>=zoneRect.top-margin&&blockRect.bottom<=zoneRect.bottom+margin}function allFit(cards,size){for(const card of cards){const parts=prepareCard(card,size);if(!parts)continue;if(neededHeight(parts)>parts.zone.clientHeight-3)return false;if(parts.name.scrollHeight>parts.name.clientHeight+1)return false;if(parts.subtitle&&parts.subtitle.scrollHeight>parts.subtitle.clientHeight+1)return false;if(!blockInside(parts.zone,parts.name)||!blockInside(parts.zone,parts.subtitle))return false}return true}"
+          )
+          replace_once(
+              'function maximumUniformFit(cards){let low=16,high=132;if(!allFit(cards,low))return low;for(let step=0;step<13;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return low}',
+              'function maximumUniformFit(cards){let low=14,high=220;if(!allFit(cards,low))return low;for(let step=0;step<15;step++){const middle=(low+high)/2;if(allFit(cards,middle))low=middle;else high=middle}return Math.max(low,14)}'
+          )
+          replace_once(
+              'function responsiveUniformTarget(maximum,scale){const value=Math.min(300,Math.max(60,Number(scale)||100)),sizeAt100=maximum/1.85;if(value<=100)return Math.max(16,sizeAt100*(value/100));return sizeAt100+(maximum-sizeAt100)*((value-100)/200)}',
+              'function responsiveUniformTarget(maximum,scale){const value=Math.min(500,Math.max(60,Number(scale)||100)),sizeAt100=maximum/1.95;if(value<=100)return Math.max(14,sizeAt100*(value/100));const progress=(value-100)/400,eased=1-Math.pow(1-progress,3);return Math.min(maximum*.985,sizeAt100+(maximum-sizeAt100)*eased)}'
+          )
+          replace_once(
+              'function applyUniformFit(){const cards=[...document.querySelectorAll(\'.tag-editor\')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(target*10)/10;',
+              'function applyUniformFit(){const cards=[...document.querySelectorAll(\'.tag-editor\')];if(!cards.length)return;const maximum=maximumUniformFit(cards),target=responsiveUniformTarget(maximum,settings.nameScale);uniformNamePx=Math.floor(Math.min(target,maximum*.985)*10)/10;'
+          )
+          replace_once(
+              "resizeField(event.target,field==='name'?210:field==='subtitle'?82:46);",
+              'resizeField(event.target);'
+          )
+          replace_once(
+              "'редактор-ценников-мастерская-кофе-v26.html'",
+              "'редактор-ценников-мастерская-кофе-v27.html'"
+          )
+
+          target.write_text(text,encoding='utf-8')
+          PY
+
+      - name: Commit v27
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v27.html)" ]; then
+            echo 'No v27 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v27.html
+          git commit -m 'Prevent title clipping and extend size to 500 percent in v27 [skip ci]'
+          git push
