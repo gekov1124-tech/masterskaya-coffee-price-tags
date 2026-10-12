@@ -1,4 +1,4 @@
-name: Deploy editor to GitHub Pages
+name: Deploy verified editor to GitHub Pages
 
 on:
   push:
@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-v29
   cancel-in-progress: true
 
 jobs:
@@ -21,11 +21,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare website
+      - name: Prepare verified v29 website
+        shell: bash
         run: |
-          mkdir -p _site
-          cp editor-v28.html _site/index.html
-          touch _site/.nojekyll
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('editor-v28.html').read_text(encoding='utf-8')
+          source = source.replace(
+              '<meta name="viewport" content="width=device-width,initial-scale=1">',
+              '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+              '  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n'
+              '  <meta http-equiv="Pragma" content="no-cache">\n'
+              '  <meta http-equiv="Expires" content="0">',
+              1,
+          )
+          source = source.replace('редактор ценников v28', 'редактор ценников v29', 1)
+          source = source.replace('Версия v28:', 'Версия v29:', 1)
+          source = source.replace(
+              '  </style>\n  <style id="pageStyle">',
+              '    .release-badge{position:sticky;top:6px;z-index:60;width:max-content;margin:0 0 10px auto;padding:6px 10px;border-radius:999px;color:#fff;background:#2f6b3c;font:800 .78rem var(--ui);box-shadow:0 5px 16px rgba(0,0,0,.16)}\n'
+              '  </style>\n  <style id="pageStyle">',
+              1,
+          )
+          source = source.replace(
+              '<main class="app">',
+              '<main class="app"><div class="release-badge">v29 · размер исправлен</div>',
+              1,
+          )
+          source = source.replace(
+              '<p class="note"><strong>Исправление размера:</strong>',
+              '<p class="note"><strong>Версия v29 загружена:</strong> фактический размер показывается рядом с процентом. <strong>Исправление размера:</strong>',
+              1,
+          )
+
+          site = Path('_site')
+          (site / 'v29').mkdir(parents=True, exist_ok=True)
+          (site / 'index.html').write_text(source, encoding='utf-8')
+          (site / 'v29' / 'index.html').write_text(source, encoding='utf-8')
+          (site / 'version.txt').write_text('v29\n', encoding='utf-8')
+          (site / '.nojekyll').touch()
+          PY
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -45,3 +81,20 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  mark-success:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Record successful deployment
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          printf 'v29 deployed successfully\nsource commit: %s\n' "$GITHUB_SHA" > PAGES_VERSION.txt
+          git add PAGES_VERSION.txt
+          git commit -m 'Mark successful Pages v29 deployment [skip ci]' || exit 0
+          git pull --rebase origin main
+          git push origin main
