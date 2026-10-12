@@ -24,7 +24,7 @@ jobs:
       - name: Prepare website
         run: |
           mkdir -p _site
-          cp editor-v26.html _site/index.html
+          cp editor-v27.html _site/index.html
           touch _site/.nojekyll
 
       - name: Configure Pages
