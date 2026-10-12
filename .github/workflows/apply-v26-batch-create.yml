@@ -1,0 +1,121 @@
+name: Apply v26 batch creation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-v26:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build v26 from v25
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path('editor-v25.html')
+          target = Path('editor-v26.html')
+          text = source.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'Required fragment not found: {old[:160]}')
+              text = text.replace(old, new, 1)
+
+          replace_once('редактор ценников v25', 'редактор ценников v26')
+          replace_once('Версия v25:', 'Версия v26:')
+          replace_once('const STORAGE_KEY="masterskaya-price-tags-v25",', 'const STORAGE_KEY="masterskaya-price-tags-v26",')
+          replace_once(
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]',
+              'LEGACY_ITEMS_KEYS=["masterskaya-price-tags-v25","masterskaya-price-tags-v24","masterskaya-price-tags-uniform-v22","masterskaya-price-tags-autoflow-v1","masterskaya-price-tags-stable-v1","masterskaya-coffee-price-tags-v3"]'
+          )
+          replace_once('SETTINGS_KEY="masterskaya-price-tags-settings-v25",', 'SETTINGS_KEY="masterskaya-price-tags-settings-v26",')
+          replace_once(
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]',
+              'LEGACY_SETTINGS_KEYS=["masterskaya-price-tags-settings-v25","masterskaya-price-tags-settings-v24","masterskaya-price-tags-uniform-settings-v22","masterskaya-price-tags-autoflow-settings-v1","masterskaya-price-tags-stable-settings-v1"]'
+          )
+
+          replace_once(
+              '.quick-create-input{width:100%;min-height:48px;padding:11px 13px;border:2px solid rgba(90,53,21,.2);border-radius:12px;background:#fff;color:var(--ink);font-size:1rem;outline:0}',
+              '.quick-create-input{width:100%;min-height:132px;padding:11px 13px;border:2px solid rgba(90,53,21,.2);border-radius:12px;background:#fff;color:var(--ink);font-size:1rem;line-height:1.42;resize:vertical;outline:0}'
+          )
+          replace_once(
+              '<div class="quick-create-copy"><h2>Новый ценник одной строкой</h2><p>Напишите только название и цену. Например: <strong>Круассан малина, 259</strong>.</p></div>',
+              '<div class="quick-create-copy"><h2>Несколько ценников одним списком</h2><p>Каждый товар пишите с новой строки: <strong>название, цена</strong>. Одинаковые названия повторно не создаются.</p></div>'
+          )
+          replace_once(
+              '<form class="quick-create-form" id="quickCreateForm"><input class="quick-create-input" id="quickCreateInput" type="text" autocomplete="off" placeholder="Название товара, цена"><button class="btn primary" type="submit">Создать ценник</button></form>',
+              '<form class="quick-create-form" id="quickCreateForm"><textarea class="quick-create-input" id="quickCreateInput" rows="6" spellcheck="true" placeholder="Круассан малина, 259\nМакаронс, 189\nХачапури, 110"></textarea><button class="btn primary" type="submit">Создать ценники</button></form>'
+          )
+          replace_once(
+              '<p class="note"><strong>Быстрое создание:</strong> введите только название и цену. Для знакомого товара программа сама добавит сохранённое описание. Разделов в ценниках больше нет.</p>',
+              '<p class="note"><strong>Массовое создание:</strong> вставьте список, где каждый ценник расположен на отдельной строке. Совпадения проверяются без учёта регистра, лишних пробелов и различий «ё/е». Уже существующие названия и повторы внутри списка пропускаются.</p>'
+          )
+          replace_once(
+              '<p>Версия v26: раздел полностью удалён. На ценнике остаются только название, описание и цена. Название можно увеличить до 300%, при этом все наименования сохраняют одинаковый фактический размер.</p>',
+              '<p>Версия v26: можно вставить сразу несколько названий с ценами — по одному товару на строку. Программа создаст несколько ценников и автоматически пропустит названия, которые уже существуют.</p>'
+          )
+
+          batch_function = r'''function createQuickTags(raw){
+      const status=$("quickCreateStatus"),input=$("quickCreateInput");
+      const rows=String(raw||"").split(/\r?\n/).map((value,index)=>({value:value.trim(),line:index+1})).filter(row=>row.value);
+      if(!rows.length){status.className="quick-create-status error";status.textContent="Введите хотя бы одну строку: название, цена";input.focus();return}
+      const existing=new Set(items.map(item=>normalizeQuick(item.name)).filter(Boolean));
+      const created=[],duplicates=[],invalid=[];
+      for(const row of rows){
+        const parsed=parseQuickLine(row.value);
+        if(!parsed){invalid.push(row);continue}
+        const key=normalizeQuick(parsed.name);
+        if(!key||existing.has(key)){duplicates.push(parsed.name);continue}
+        const template=findTemplate(parsed.name),subtitle=String(template?.subtitle||"");
+        const item=normalizeItem({name:parsed.name,subtitle,price:parsed.price,pageBreakBefore:false});
+        items.push(item);existing.add(key);created.push(item);
+      }
+      if(created.length){save();render(created[created.length-1].id)}else updateStatus();
+      input.value=invalid.map(row=>row.value).join("\n");
+      const parts=[];
+      if(created.length)parts.push(`Создано ценников: ${created.length}.`);
+      if(duplicates.length)parts.push(`Пропущено дубликатов: ${duplicates.length}.`);
+      if(invalid.length)parts.push(`Не распознано строк: ${invalid.length} (${invalid.map(row=>row.line).join(", ")}).`);
+      if(!parts.length)parts.push("Новых ценников нет.");
+      status.className=invalid.length?"quick-create-status error":"quick-create-status";
+      status.textContent=parts.join(" ");
+      requestAnimationFrame(()=>input.focus());
+    }
+    grid.addEventListener('input' '''
+
+          pattern = r"function createQuickTag\(raw\)\{.*?\}\n    grid\.addEventListener\('input'"
+          text, count = re.subn(pattern, batch_function, text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit(f'Batch function replacement count: {count}')
+
+          replace_once(
+              "$('quickCreateForm').addEventListener('submit',event=>{event.preventDefault();createQuickTag($('quickCreateInput').value)});",
+              "$('quickCreateForm').addEventListener('submit',event=>{event.preventDefault();createQuickTags($('quickCreateInput').value)});$('quickCreateInput').addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){$('quickCreateForm').requestSubmit()}});"
+          )
+          replace_once(
+              "'редактор-ценников-мастерская-кофе-v25.html'",
+              "'редактор-ценников-мастерская-кофе-v26.html'"
+          )
+
+          target.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit v26
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- editor-v26.html)" ]; then
+            echo 'No v26 changes required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add editor-v26.html
+          git commit -m 'Add batch creation with duplicate prevention in v26 [skip ci]'
+          git push
